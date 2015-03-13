@@ -78,7 +78,7 @@ ParserHook.mode0.skpDelAppvar:
 	;;;; saferam copy
 	
 	push hl
-		ld hl, PRGM
+		ld hl, PRGM2
 		rst rMOV9TOOP1
 		bcall(_ChkFindSym)
 		jr c, ParserHook.mode0.d
@@ -409,5 +409,7 @@ APPVAR:
 	.db AppVarObj,"TESTAPP",0
 PRGM:
 	.db ProgObj,"#", 0, 0, 0, 0, 0, 0, 0
+PRGM2:
+	.db ProgObj,"##", 0, 0, 0, 0, 0, 0
 ARGLIST:
 	.db ListObj, tVarLst, "ARGS", 0
