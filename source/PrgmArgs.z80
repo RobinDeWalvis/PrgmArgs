@@ -1,0 +1,39 @@
+.nolist
+#include "ti83plus.inc"
+#define NAME "PrgmArgs"
+.list
+.org $4000
+	;header
+	.db	80h, 0Fh, 0, 0, 0, 0
+	.db	80h, 48h, NAME
+	.db	80h, 90h
+	.db	80h, 21h, 0
+	.db	80h, 31h, 1
+	.db	80h, 81h, 1
+	.db	80h, 12h, 01, 04h
+	.db	03h, 22h, 09h, 00h
+	.db	80h, 70h
+	.db	02h, 00
+Incl:
+	jp Start
+	;includes
+	#include "utils.z80"
+	#include "ParseHook.z80"
+Start:
+	;code
+	call Utils.clear
+	Utils.println(Installing)
+	
+	ld hl, ParserHook
+	in a,(6)
+	bcall(_SetParserHook)
+	
+	Utils.println(DoneInstalling)
+	bcall(_GetKey)
+	bjump(_JForceCmdNoChar)
+	
+Installing:
+    .db "Installing hook", 0
+DoneInstalling:
+    .db "Success!", 0
+.end

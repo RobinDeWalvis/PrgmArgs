@@ -1,0 +1,153 @@
+#define Utils.print(x) ld hl, x \ call Utils.printS
+#define Utils.println(x) ld hl, x \ call Utils.printS \ bcall(_NewLine)
+#define Utils.cp_HLDE or a \ sbc hl, de \ add hl, de
+#define Utils.cp_HLBC or a \ sbc hl, bc \ add hl, bc
+
+; Clear screen.
+Utils.clear:
+	bcall(_ClrLCDFull)
+    ld hl, $0000
+    ld (CurCol), hl
+	ld (CurRow), hl
+	ret
+
+Utils.clear2:
+	push hl
+	bcall(_ClrScrnFull)
+    ld hl, $0000
+    ld (CurCol), hl
+	ld (CurRow), hl
+	pop hl
+	ret
+
+; prints contents of OP1
+Utils.printOP1:
+	ld b, 9
+	ld hl, OP1
+Utils.printOP1.lp
+	ld a, (hl)
+	bcall(_PutC)
+	inc hl
+	djnz Utils.printOP1.lp
+	ret
+
+; prints a characters starting form hl
+Utils.printLen:
+	ld b, a
+Utils.printLen.lp
+	ld a, (hl)
+	bcall(_PutC)
+	inc hl
+	djnz Utils.printLen.lp
+	ret
+	
+; Print zero terminated string at hl (destroys hl).
+Utils.printS:
+	ld a, (hl)
+	or a
+	ret z
+	bcall(_PutC)
+	inc hl
+	jr Utils.printS
+
+; enable invert text
+Utils.setInvText:
+	set textInverse,(iy+textFlags)
+	ret
+
+; disable invert text
+Utils.resInvText:
+	res textInverse,(iy+textFlags)
+	ret
+
+; Get zero terminated length of string at hl (destroys hl).
+Utils.strLen:
+	push hl
+		call Utils.strLen2
+	pop bc
+	sbc hl, bc
+	ret
+
+Utils.strLen2:
+	ld a, (hl)
+	or a
+	ret z
+	inc hl
+	jr Utils.strLen2
+	
+; Copy zero terminated string at HL to DE.
+Utils.strCopy:
+	xor a
+Utils.strCopy.docopystr:
+	cp (hl)
+	ldi
+	jr nz, Utils.strCopy.docopystr
+	ret
+	
+Utils.strCopy2:
+	xor a
+Utils.strCopy2.docopystr:
+	cp (hl)
+	jr z, Utils.strCopy2.end
+	ldi
+	jr Utils.strCopy2.docopystr
+Utils.strCopy2.end:
+	ret
+	
+; compare string at HL with DE
+Utils.strCp:
+    ld a,(de)
+    cp (hl)
+    ret nz
+    inc de
+    inc hl
+    or a
+    jr nz, Utils.strCp
+    ret
+
+;checks if char in A is present in string at HL
+Utils.strContains:
+	push hl
+	push af
+		call Utils.strLen
+		ld b, h
+		ld c, l
+	pop af
+	pop hl
+	ld d, a
+Utils.strContains.lp:
+	ld a, (hl)
+	cp d
+	jp z, Utils.strContains.rz
+	inc hl
+	or a \ sbc hl, bc \ add hl, bc
+	jr c, Utils.strContains.lp
+	or 1
+	ret
+Utils.strContains.rz:
+	cp a
+	ret
+	
+;2-byte hex to 4-byte string
+;hl: num
+;de: string dest
+Utils.hex2dec:
+	ld bc,-1000
+	call Utils.hex2dec.Num1
+	ld bc,-100
+	call Utils.hex2dec.Num1
+	ld c,-10
+	call Utils.hex2dec.Num1
+	ld c,-1
+Utils.hex2dec.Num1:
+	ld	a, '0'-1
+Utils.hex2dec.Num2:
+	inc	a
+	add	hl, bc
+	jr c, Utils.hex2dec.Num2
+	sbc	hl, bc
+	ex de, hl
+	ld (hl), a
+	inc hl
+	ex de, hl
+	ret

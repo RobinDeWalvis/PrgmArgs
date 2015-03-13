@@ -1,0 +1,413 @@
+#define saferam appBackUpScreen
+#define saferam2 saveSScreen
+#define hookToken tSin
+
+ParserHook:
+    .db 83h
+    or a
+    jp z, ParserHook.mode0
+	cp 1
+	jp z, ParserHook.mode1
+	jp returnZ
+	
+ParserHook.mode0:
+	ld hl, PRGM
+	ld de, basic_prog
+	call Utils.strCp
+	jp nz, ReturnZ
+	
+	ld hl, basic_prog
+	rst rMOV9TOOP1
+	bcall(_ChkFindSym)
+	ld h, d
+	ld l, e
+	ld c, (hl)
+	inc hl
+	ld b, (hl)
+	inc hl
+	; prgm start addr in HL, length in BC
+	call strParse
+	; (new) length in hl
+
+	;;;; run hook check
+	
+	push hl
+		ld hl, saferam2
+		ld a, (hl)
+		inc hl
+		ld h, (hl)
+		or h
+	pop hl
+	jp z, ReturnZ
+	
+	;;;; appvar creation / saferam2 copy
+	
+	push hl
+		ld hl, APPVAR
+		rst rMOV9TOOP1
+		bcall(_ChkFindSym)
+		jr c, ParserHook.mode0.skpDelAppvar
+		bcall(_DelVar)
+ParserHook.mode0.skpDelAppvar:
+		ld hl, 9
+		bcall(_CreateAppVar)
+		
+		ld hl, saferam2
+		ld a, (hl)
+		inc hl
+		ld h, (hl)
+		ld l, a
+		push hl
+			bcall(_CreateTempString)
+		pop bc
+		inc bc
+		inc bc
+		ld hl, saferam2
+		ldir
+		
+		ld hl, APPVAR
+		rst rMOV9TOOP1
+		bcall(_ChkFindSym)
+		inc de
+		inc de
+		ld bc, 9
+		ld hl, OP4
+		ldir
+	pop hl
+	
+	;;;; saferam copy
+	
+	push hl
+		ld hl, PRGM
+		rst rMOV9TOOP1
+		bcall(_ChkFindSym)
+		jr c, ParserHook.mode0.d
+		bcall(_DelVar)
+ParserHook.mode0.d:
+	pop hl
+	push hl
+		bcall(_CreateProg)
+	pop bc
+	inc de
+	inc de
+	ld hl, saferam
+	ldir
+	
+	;;;; run as basic prgm
+	bcall(_OP4TOOP1)
+	set 1, (iy+8)
+	bcall(_ParseInp)
+	res 1, (iy+8)
+
+	;;;;; delete temp storage
+	
+	bcall(_PushRealO1)
+		ld hl, APPVAR
+		rst rMOV9TOOP1
+		bcall(_ChkFindSym)
+		jr c, ParserHook.mode0.AppVarNF
+		inc de
+		inc de
+		ld h, d
+		ld l, e
+		ld de, OP1
+		ld bc, 9
+		ldir
+		bcall(_ChkFindSym)
+		jr c, ParserHook.mode0.AppVarNF
+		bcall(_DelVar)
+ParserHook.mode0.AppVarNF
+	bcall(_PopRealO1)
+ReturnNZ:
+	or 1
+	ret
+ReturnZ:
+    cp a
+    ret
+
+FP_5:
+	.db 00h,80h,50h,00h,00,00,00,00,00
+	
+ParserHook.mode1:
+	push hl
+        ld hl, $C2C2
+        sbc hl,bc
+    pop hl
+	jr nz, ReturnZ
+	
+	push hl
+		ld de, 2
+		Utils.cp_HLDE
+	pop hl	
+	jp c, ReturnZ
+	;symbol is sin( and it has >1 args
+	dec hl
+	push hl
+		bcall(_PushRealO1)
+		ld hl, ARGLIST
+		rst rMOV9TOOP1
+		bcall(_ChkFindSym)
+		jp c, ParserHook.mode1.noDel
+		bcall(_DelVar)
+ParserHook.mode1.noDel:
+		ld hl, ARGLIST
+		rst rMOV9TOOP1
+	pop hl
+	push hl
+		bcall(_CreateRList)
+		inc de
+		inc de
+	pop hl
+	push hl
+		push de
+			ld a, 9
+			ld d, h
+			ld e, l
+			dec de
+			call Mul8
+		pop de
+		add hl, de
+		ld d, h
+		ld e, l
+	pop hl
+	
+ParserHook.mode1.dfps:
+	push hl
+		push de
+			bcall(_PopRealO1)
+		pop de
+		push de
+			ld hl, OP1
+			ld bc, 9
+			ldir
+		pop de
+		ex de, hl
+		ld de, 9
+		or a
+		sbc hl, de
+		ex de, hl
+	pop hl
+	dec hl
+	ld a, h
+	or l
+	jp nz, ParserHook.mode1.dfps
+	; op1 now contains the first argument
+	bcall(_PopRealO1)
+	bcall(_ConvOP1)
+	push de
+		ld hl, APPVAR
+		rst rMOV9TOOP1
+		bcall(_ChkFindSym)
+		jr c, ParserHook.mode1.nf
+		inc de
+		inc de
+		ld h, d
+		ld l, e
+		ld de, OP1
+		ld bc, 9
+		ldir
+		bcall(_ChkFindSym)
+		jr c, ParserHook.mode1.nf
+		inc de
+		inc de
+	pop hl
+	
+	; hl, argument index
+	; de, data address
+	add hl, de
+	ld de, OP1+1
+	ld bc, 8
+	ldir
+	ld a, ProgObj
+	ld (OP1), a
+	
+	set 1, (iy+8)
+	bcall(_ParseInp)
+	res 1, (iy+8)
+	
+	ld hl, 0
+	bcall(_DeallocFPS)
+	bcall(_RclAns)
+	jp ReturnNZ
+ParserHook.mode1.nf:
+	pop hl
+	ld hl, 0
+	bcall(_DeallocFPS)
+	res numOP1, (iy+ParsFlag2)
+	jp ReturnNZ 
+	
+; parse string at hl to saferam
+strParse:
+	ld de, saferam
+	ld a, 0
+	ld (saferam2), a
+	ld (saferam2+1), a
+	inc bc
+	push hl
+	add hl, bc
+		ld b, h
+		ld c, l
+	pop hl
+strParse.lp:
+	ld a, (hl)
+	push bc
+		push hl
+			cp '_'
+			jp nz, strParse.notPrgmTok
+			; current token is 'prgm'
+			
+			inc hl
+			push hl
+				call getPrgmNameLen
+			pop hl
+			ld b, 0
+			ld c, a
+			push bc \ push de \ push hl
+				ld bc, 9
+				ld hl, OP1
+				ld de, OP1+1
+				ld (hl), 0
+				ldir
+				ld b, 0
+				ld c, a
+			pop hl
+			push hl
+				ld de, OP1+1
+				ldir
+				ld a, ProgObj
+				ld (OP1), a
+			pop hl \ pop de \ pop bc
+			add hl, bc
+
+			ld a, (hl)
+			cp 10h ; '(' ?
+			jr nz, strParse.notPrgmTok2
+			
+		pop hl
+		push hl
+			inc hl
+			add hl, bc
+			; bc contains name length
+
+			push hl \ push de
+				bcall(_ChkFindSym)
+			pop de \ pop hl
+			jr c, strParse.notPrgmTok2
+			
+		pop af
+		push hl
+			; data address in bc??
+			ld a, hookToken
+			ld (de), a
+			inc de
+			
+			push de
+				ld hl, saferam2
+				ld e, (hl)
+				inc hl
+				ld d, (hl)
+				inc hl
+				add hl, de
+				; end of str in hl
+				; name length in c
+				; str length in de
+				push de
+					ld bc, 8
+					ex de, hl
+					ld hl, OP1+1
+					ldir
+				pop de
+				ld hl, 8
+				add hl, de
+				ex de, hl
+				; new length in de
+				ld hl, saferam2
+				ld (hl), e
+				inc hl
+				ld (hl), d
+				ex de, hl
+				ld de, 8
+				or a
+				sbc hl, de
+				;address before name in hl
+			pop de
+			
+			call Utils.hex2dec
+			ld a, tComma
+			ld (de), a
+			inc de
+			
+			jp strParse.prgmTokChk.next
+strParse.notPrgmTok2:
+		pop hl
+		push hl
+strParse.notPrgmTok:
+			ldi
+strParse.prgmTokChk.next:
+		pop hl
+	pop bc
+	inc hl
+	Utils.cp_HLBC
+	jp c, strParse.lp
+strParse._:	
+	ex de, hl
+	; end of expr now in HL
+	or a
+	ld (hl), a
+	ld de, saferam
+	sbc hl, de
+	dec hl
+	ret
+	
+; get length of prgm name
+getPrgmNameLen:
+	ld b, 8
+getPrgmNameLen.lp:
+	ld a, (hl)
+	call isTokAllowed
+	jr nz, getPrgmNameLen._
+	inc hl
+	djnz getPrgmNameLen.lp
+getPrgmNameLen._:
+	ld a, 8
+	sub b
+	ret
+
+; checks if token in A is allowed
+isTokAllowed:
+	sub 30h
+	cp 3Ah - 30h
+	jr nc, isTokAllowed.a
+	cp a
+    ret
+isTokAllowed.a
+	add a, 30h
+	sub 41h
+	cp 5Ch - 41h
+	jr nc, isTokAllowed.rnz
+	cp a
+    ret
+isTokAllowed.rnz:
+	or 1
+	ret
+
+; HL = DE * A
+Mul8:
+  ld hl,0
+  ld b,8
+Mul8Loop:
+  rrca
+  jp nc,Mul8Skip
+  add hl,de
+Mul8Skip:
+  sla e
+  rl d
+  djnz Mul8Loop
+  ret
+	
+APPVAR:
+	.db AppVarObj,"TESTAPP",0
+PRGM:
+	.db ProgObj,"#", 0, 0, 0, 0, 0, 0, 0
+ARGLIST:
+	.db ListObj, tVarLst, "ARGS", 0
